@@ -8,7 +8,11 @@ from dataclasses import asdict, dataclass, field
 from typing import Any, Optional
 
 import httpx
-from prometheus_client.parser import text_string_to_metric_families
+
+try:
+    from prometheus_client.parser import text_string_to_metric_families
+except ImportError:  # pragma: no cover - exercised in environments without deps installed.
+    text_string_to_metric_families = None  # type: ignore[assignment]
 
 
 PROMPT_TOKEN_ALIASES = [
@@ -100,6 +104,12 @@ class VLLMMetricsSnapshot:
 
 
 def parse_prometheus_metrics(text: str, source: str, timestamp_unix_ms: int) -> VLLMMetricsSnapshot:
+    if text_string_to_metric_families is None:
+        raise RuntimeError(
+            "prometheus-client is required for /metrics parsing. "
+            "Install dependencies with: pip install -r requirements.txt"
+        )
+
     values: dict[str, float] = {}
     buckets: dict[str, dict[str, float]] = {}
 
@@ -241,11 +251,12 @@ class VLLMMetricsScraper:
                 timestamp_unix_ms=timestamp_unix_ms,
             )
         except Exception as exc:  # noqa: BLE001
+            error_text = str(exc) or exc.__class__.__name__
             return VLLMMetricsSnapshot(
                 timestamp_unix_ms=timestamp_unix_ms,
                 source=source,
                 scrape_ok=False,
-                scrape_error=str(exc),
+                scrape_error=error_text,
                 prompt_tokens=None,
                 generation_tokens=None,
                 num_requests_running=None,
